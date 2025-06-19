@@ -196,6 +196,7 @@ dependencies {
     // For xopp file format
     implementation("org.apache.commons:commons-compress:1.27.1") // GZip support
     implementation "org.jetbrains.kotlinx:kotlinx-serialization-json:1.8.0"
+    implementation("com.google.gemini:gemini-android-sdk:1.0.0")
 }
 
 tasks.register('printVersionName') {
