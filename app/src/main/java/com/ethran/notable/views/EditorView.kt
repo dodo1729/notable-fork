@@ -18,6 +18,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.navigation.NavController
 import com.ethran.notable.TAG
 import com.ethran.notable.classes.AppRepository
+import com.ethran.notable.utils.AudioHelper
 import com.ethran.notable.classes.DrawCanvas
 import com.ethran.notable.classes.EditorControlTower
 import com.ethran.notable.classes.PageView
@@ -45,6 +46,7 @@ fun EditorView(
 
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
+    val audioHelper = remember { AudioHelper() }
 
     // control if we do have a page
     if (AppRepository(context).pageRepository.getById(pageId) == null) {
@@ -99,6 +101,10 @@ fun EditorView(
             if (bookId != null) {
                 appRepository.bookRepository.setOpenPageId(bookId, pageId)
             }
+        }
+
+        LaunchedEffect(Unit) {
+            audioHelper.startSpellingTestTutor(context)
         }
 
         DisposableEffect(Unit) {
