@@ -131,8 +131,8 @@ class DrawCanvas(
     }
 
     private fun generateRandomRectangle() {
-        val left = Random.nextFloat() * page.viewWidth
-        val top = Random.nextFloat() * page.viewHeight
+        var left = Random.nextFloat() * page.viewWidth
+        var top = Random.nextFloat() * page.viewHeight
         var right = Random.nextFloat() * page.viewWidth
         var bottom = Random.nextFloat() * page.viewHeight
 
