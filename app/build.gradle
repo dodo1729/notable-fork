@@ -196,7 +196,7 @@ dependencies {
     // For xopp file format
     implementation("org.apache.commons:commons-compress:1.27.1") // GZip support
     implementation "org.jetbrains.kotlinx:kotlinx-serialization-json:1.8.0"
-    implementation("com.google.ai.client:generativeai:0.3.0")
+    implementation("com.google.firebase:firebase-ai:16.0.0")
 }
 
 tasks.register('printVersionName') {

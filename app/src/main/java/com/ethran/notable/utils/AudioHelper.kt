@@ -2,7 +2,11 @@ package com.ethran.notable.utils
 
 import android.content.Context
 import android.util.Log
-// import com.google.gemini.audio.* // Placeholder for actual Gemini SDK imports
+import com.google.firebase.vertexai.FirebaseVertexAI
+import com.google.firebase.vertexai.type.generationConfig
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 
 class AudioHelper {
 
@@ -12,19 +16,29 @@ class AudioHelper {
         val prompt = "Hello! I'm your spelling test tutor. Are you ready to start practicing your spelling words?"
 
         try {
-            // Placeholder for Gemini audio client initialization
-            // val audioClient = GeminiAudioClient(context)
+            val generativeModel = FirebaseVertexAI.getInstance()
+                .generativeModel(
+                    modelName = "gemini-1.5-flash",
+                    // For demonstration purposes, setting a low temperature. Adjust as needed.
+                    generationConfig = generationConfig {
+                        temperature = 0.1f
+                    }
+                )
 
-            // Placeholder for creating an audio session
-            // val audioSession = audioClient.createSession(prompt)
-
-            // Placeholder for starting the audio session
-            // audioSession.start()
-
-            Log.d(TAG, "Spelling test tutor started successfully with prompt: $prompt")
+            CoroutineScope(Dispatchers.IO).launch {
+                try {
+                    val chat = generativeModel.startChat()
+                    val response = chat.sendMessage(prompt)
+                    Log.d(TAG, "Spelling test tutor started successfully. Response: ${response.text}")
+                } catch (e: Exception) {
+                    Log.e(TAG, "Error during Firebase AI interaction: ${e.message}")
+                    // Handle exceptions appropriately
+                }
+            }
+            Log.d(TAG, "Firebase AI request initiated for prompt: $prompt")
 
         } catch (e: Exception) {
-            Log.e(TAG, "Error starting spelling test tutor: ${e.message}")
+            Log.e(TAG, "Error initializing Firebase AI or starting coroutine: ${e.message}")
             // Handle exceptions appropriately
         }
     }
