@@ -42,9 +42,24 @@ import com.ethran.notable.modals.AppSettings
 import com.ethran.notable.modals.GlobalAppSettings
 import com.ethran.notable.ui.theme.InkaTheme
 import com.ethran.notable.views.Router
+import com.google.android.gms.auth.api.signin.GoogleSignIn
+import com.google.android.gms.auth.api.signin.GoogleSignInAccount
+import com.google.android.gms.auth.api.signin.GoogleSignInClient
+import com.google.android.gms.auth.api.signin.GoogleSignInOptions
+import com.google.android.gms.auth.api.signin.GoogleSignInStatusCodes
+import com.google.android.gms.common.api.ApiException
+import com.google.android.gms.tasks.Task
+import com.google.api.client.extensions.android.http.AndroidHttp
+import com.google.api.client.googleapis.extensions.android.gms.auth.GoogleAccountCredential
+import com.google.api.client.json.gson.GsonFactory
+import com.google.api.services.drive.Drive
+import com.google.api.services.drive.DriveScopes
 import com.onyx.android.sdk.api.device.epd.EpdController
 import io.shipbook.shipbooksdk.Log
 import io.shipbook.shipbooksdk.ShipBook
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 
 
@@ -52,6 +67,7 @@ var SCREEN_WIDTH = EpdController.getEpdHeight().toInt()
 var SCREEN_HEIGHT = EpdController.getEpdWidth().toInt()
 
 var TAG = "MainActivity"
+const val RC_SIGN_IN = 9001
 const val APP_SETTINGS_KEY = "APP_SETTINGS"
 const val PACKAGE_NAME = "com.ethran.notable"
 
@@ -60,8 +76,32 @@ const val PACKAGE_NAME = "com.ethran.notable"
 @ExperimentalComposeUiApi
 @ExperimentalFoundationApi
 class MainActivity : ComponentActivity() {
+
+    private lateinit var googleSignInClient: GoogleSignInClient
+    // private var googleAccount: GoogleSignInAccount? = null
+    private val _googleAccount = MutableStateFlow<GoogleSignInAccount?>(null)
+    val googleAccountFlow: StateFlow<GoogleSignInAccount?> = _googleAccount.asStateFlow()
+
+    private val _signInError = MutableStateFlow<String?>(null)
+    val signInErrorFlow: StateFlow<String?> = _signInError.asStateFlow()
+
+    private val signInLauncher = registerForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        val task = GoogleSignIn.getSignedInAccountFromIntent(result.data)
+        handleSignInResult(task)
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+
+        // Configure Google Sign-In
+        val gso = GoogleSignInOptions.Builder(GoogleSignInOptions.DEFAULT_SIGN_IN)
+            .requestEmail()
+            .requestScopes(com.google.android.gms.common.api.Scope("https://www.googleapis.com/auth/drive.file"))
+            .build()
+        googleSignInClient = GoogleSignIn.getClient(this, gso)
+
         enableFullScreen()
         ShipBook.start(
             this.application, BuildConfig.SHIPBOOK_APP_ID, BuildConfig.SHIPBOOK_APP_KEY
@@ -237,4 +277,71 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    private fun handleSignInResult(completedTask: Task<GoogleSignInAccount>) {
+        _signInError.value = null // Clear previous error
+        try {
+            val account = completedTask.getResult(ApiException::class.java)
+            _googleAccount.value = account
+            Log.i(TAG, "signInResult:success, email: ${account?.email}")
+        } catch (e: ApiException) {
+            Log.w(TAG, "signInResult:failed code=" + e.statusCode + ", message=" + e.message)
+            _googleAccount.value = null
+            when (e.statusCode) {
+                GoogleSignInStatusCodes.SIGN_IN_CANCELLED ->
+                    _signInError.value = "Sign-in was cancelled."
+                GoogleSignInStatusCodes.NETWORK_ERROR ->
+                    _signInError.value = "Network error. Please check your connection and try again."
+                GoogleSignInStatusCodes.SIGN_IN_FAILED ->
+                    _signInError.value = "Sign-in failed. Please try again."
+                // GoogleSignInStatusCodes.SERVICE_MISSING, API_NOT_CONNECTED, etc.
+                else ->
+                    _signInError.value = "Sign-in error: ${e.localizedMessage ?: "Unknown error"}"
+            }
+        }
+    }
+
+    // fun getGoogleAccount(): GoogleSignInAccount? { // Replaced by StateFlow
+    //     return _googleAccount.value
+    // }
+
+    fun getDriveService(): Drive? {
+        val account = _googleAccount.value ?: return null
+        val credential = GoogleAccountCredential.usingOAuth2(
+            this,
+            listOf(DriveScopes.DRIVE_FILE)
+        )
+        credential.selectedAccount = account.account
+        return Drive.Builder(
+            AndroidHttp.newCompatibleTransport(),
+            GsonFactory(),
+            credential
+        )
+            .setApplicationName(getString(R.string.app_name))
+            .build()
+    }
+
+    fun signIn() {
+        _signInError.value = null // Clear previous error before new attempt
+        val signInIntent = googleSignInClient.signInIntent
+        signInLauncher.launch(signInIntent)
+    }
+
+    fun signOut(onComplete: () -> Unit) {
+        googleSignInClient.signOut().addOnCompleteListener(this) {
+            _googleAccount.value = null
+            _signInError.value = null // Clear any errors on sign out
+            onComplete()
+        }
+    }
+
+    fun clearSignInError() {
+        _signInError.value = null
+    }
+
+    override fun onStart() {
+        super.onStart()
+        // Check for existing Google Sign In account, if the user is already signed in
+        // the GoogleSignInAccount will be non-null.
+        _googleAccount.value = GoogleSignIn.getLastSignedInAccount(this)
+    }
 }
