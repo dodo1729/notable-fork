@@ -41,6 +41,8 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -50,10 +52,13 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.material.ButtonDefaults
 import androidx.core.net.toUri
 import androidx.navigation.NavController
 import com.ethran.notable.BuildConfig
+import com.ethran.notable.MainActivity
 import com.ethran.notable.classes.showHint
+import com.ethran.notable.components.DriveFilePicker
 import com.ethran.notable.components.SelectMenu
 import com.ethran.notable.db.KvProxy
 import com.ethran.notable.modals.AppSettings
@@ -153,6 +158,9 @@ fun SettingsView(navController: NavController) {
                 }
             }
 
+            // Google Sign-In Section
+            GoogleSignInSection(context = context)
+
             // Additional actions
             Column(
                 modifier = Modifier.padding(bottom = 16.dp)
@@ -173,6 +181,152 @@ fun SettingsView(navController: NavController) {
         }
     }
 }
+
+
+@Composable
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import java.io.ByteArrayOutputStream
+import androidx.compose.runtime.collectAsState
+import com.ethran.notable.classes.LocalSnackContext
+import com.ethran.notable.classes.SnackType
+
+fun GoogleSignInSection(context: Context) {
+    val mainActivity = context as? MainActivity
+    val coroutineScope = rememberCoroutineScope()
+    // Observe account changes from MainActivity's StateFlow
+    val googleAccount by mainActivity?.googleAccountFlow?.collectAsState() ?: remember { mutableStateOf(null) }
+    val signInError by mainActivity?.signInErrorFlow?.collectAsState() ?: remember { mutableStateOf(null) }
+    val snackbarHostState = LocalSnackContext.current
+
+
+    var showFilePicker by remember { mutableStateOf(false) }
+    var selectedFileText by remember { mutableStateOf<String?>(null) }
+    var fileContent by remember { mutableStateOf<String?>(null) }
+    var isLoadingFile by remember { mutableStateOf(false) }
+    var driveError by remember { mutableStateOf<String?>(null) }
+
+    LaunchedEffect(signInError) {
+        signInError?.let { errorMsg ->
+            snackbarHostState.showSnack(errorMsg, SnackType.Error)
+            mainActivity?.clearSignInError() // Clear the error after showing
+        }
+    }
+
+
+    if (showFilePicker) {
+        DriveFilePicker(
+            driveService = mainActivity?.getDriveService(),
+            onFileSelected = { fileId, fileName ->
+                showFilePicker = false
+                selectedFileText = "Selected File: $fileName (ID: $fileId)"
+                fileContent = null
+                isLoadingFile = true
+                driveError = null
+                coroutineScope.launch {
+                    try {
+                        val driveService = mainActivity?.getDriveService()
+                        if (driveService != null) {
+                            val outputStream = ByteArrayOutputStream()
+                            withContext(Dispatchers.IO) {
+                                // Consider adding specific query for mimeType if not already text/plain by picker
+                                driveService.files().get(fileId).executeMediaAndDownloadTo(outputStream)
+                            }
+                            fileContent = outputStream.toString("UTF-8")
+                        } else {
+                            driveError = "Error: Drive service not available. Please ensure you are signed in."
+                        }
+                    } catch (e: Exception) { // Catch more specific exceptions if possible (IOException, GoogleJsonResponseException)
+                        driveError = "Error downloading file: ${e.localizedMessage ?: "Unknown error"}"
+                        Log.e("DriveDownload", "Error downloading file $fileId", e)
+                    } finally {
+                        isLoadingFile = false
+                    }
+                }
+            },
+            onCancel = {
+                showFilePicker = false
+                driveError = null // Clear error if picker is cancelled
+            }
+        )
+    } else {
+        Card(
+            modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 8.dp),
+        elevation = 2.dp,
+        shape = MaterialTheme.shapes.medium
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Text(
+                text = "Google Drive Sync",
+                style = MaterialTheme.typography.h6,
+                modifier = Modifier.padding(bottom = 8.dp)
+            )
+            if (googleAccount == null) {
+                Button(onClick = {
+                    mainActivity?.signIn()
+                    // TODO: Observe changes to googleAccount to update UI after sign-in
+                }) {
+                    Text("Sign in with Google")
+                }
+            } else {
+                Text("Signed in as: ${googleAccount?.email}")
+                Spacer(modifier = Modifier.height(8.dp))
+                Button(onClick = { showFilePicker = true }) {
+                    Text("Select Text File from Drive")
+                }
+                Spacer(modifier = Modifier.height(8.dp))
+                selectedFileText?.let {
+                    Text(it)
+                    Spacer(modifier = Modifier.height(8.dp))
+                }
+                if (isLoadingFile) {
+                    CircularProgressIndicator()
+                    Spacer(modifier = Modifier.height(8.dp))
+                }
+                driveError?.let {
+                    Text(it, color = MaterialTheme.colors.error)
+                    Spacer(modifier = Modifier.height(8.dp))
+                }
+                fileContent?.let {
+                    Text("File Content:", fontWeight = FontWeight.Bold)
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(200.dp) // Adjust height as needed
+                            .background(Color.LightGray.copy(alpha = 0.3f))
+                            .padding(8.dp)
+                            .verticalScroll(rememberScrollState())
+                    ) {
+                        Text(it)
+                    }
+                    Spacer(modifier = Modifier.height(8.dp))
+                }
+                Button(
+                    onClick = {
+                        mainActivity?.signOut {
+                            // UI should update automatically via StateFlow
+                            selectedFileText = null
+                            fileContent = null
+                            driveError = null
+                        }
+                    },
+                    colors = ButtonDefaults.buttonColors(backgroundColor = MaterialTheme.colors.error)
+                ) {
+                    Text("Sign Out", color = MaterialTheme.colors.onError)
+                }
+            }
+        }
+    }
+}
+
 
 @Composable
 fun GeneralSettings(kv: KvProxy, settings: AppSettings) {
